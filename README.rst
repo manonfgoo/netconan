@@ -65,6 +65,7 @@ Netconan can anonymize *many types of sensitive information*:
 * IPv4 and IPv6 addresses (``--anonymize-ips``, ``-a``).
 * User-specified sensitive words (``--sensitive-words``, ``-w``).  *Note that any occurrence of a specified sensitive word will be replaced regardless of context, even if it is part of a larger string.*
 * User-specified AS numbers (``--as-numbers``, ``-n``).  *Note that any number matching a specified AS number will be anonymized.*
+* Usernames and related identity fields in Cisco/Arista ``username``, ``snmp-server user``, and Juniper ``set system login user`` lines (``--anonymize-identities``).  Replacement is deterministic from ``--salt``.
 
 
 Netconan attempts to *preserve useful structure*. For example,
@@ -114,8 +115,9 @@ For more information about less commonly-used features, see the Netconan help (`
     usage: netconan [-h] [--version] [-a] [--anonymize-ssh-keys] [-c CONFIG]
                     [-d DUMP_IP_MAP] -i INPUT
                     [-l {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [-n AS_NUMBERS] -o
-                    OUTPUT [-p] [-r RESERVED_WORDS] [-s SALT] [-u]
-                    [-w SENSITIVE_WORDS] [--preserve-prefixes PRESERVE_PREFIXES]
+                    OUTPUT [-p] [--anonymize-identities] [-r RESERVED_WORDS]
+                    [-s SALT] [-u] [-w SENSITIVE_WORDS]
+                    [--preserve-prefixes PRESERVE_PREFIXES]
                     [--preserve-addresses PRESERVE_ADDRESSES]
                     [--preserve-private-addresses]
                     [--preserve-host-bits PRESERVE_HOST_BITS]
@@ -150,6 +152,12 @@ For more information about less commonly-used features, see the Netconan help (`
                             placed
       -p, --anonymize-passwords
                             Anonymize password and snmp community lines
+      --anonymize-identities
+                            Anonymize usernames, Cisco inline view names, and
+                            remote hosts in configuration lines. Supports
+                            Cisco/Arista username, snmp-server user, Juniper
+                            set-style and hierarchical login user lines.
+                            Replacement is deterministic from --salt.
       -r RESERVED_WORDS, --reserved-words RESERVED_WORDS
                             List of comma separated words that should not be
                             anonymized

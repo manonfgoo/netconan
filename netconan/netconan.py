@@ -65,6 +65,12 @@ def _parse_args(argv):
         help="Anonymize IP addresses",
     )
     parser.add_argument(
+        "--anonymize-identities",
+        action="store_true",
+        default=False,
+        help="Anonymize usernames, Cisco inline view names, and remote hosts in configuration lines. Supports Cisco/Arista username, snmp-server user, Juniper set-style and hierarchical login user lines. Replacement is deterministic from --salt.",
+    )
+    parser.add_argument(
         "-c",
         "--config",
         is_config_file=True,
@@ -227,6 +233,7 @@ def main(argv=sys.argv[1:]):
             sensitive_words,
             args.anonymize_passwords,
             args.anonymize_ips,
+            args.anonymize_identities,
             args.undo,
         ]
     ):
@@ -248,6 +255,7 @@ def main(argv=sys.argv[1:]):
             reserved_words,
             preserve_prefixes,
             preserve_addresses,
+            anon_identities=args.anonymize_identities,
             preserve_suffix_v4=args.preserve_host_bits,
             preserve_suffix_v6=args.preserve_host_bits,
             anon_ssh_keys=args.anonymize_ssh_keys,
