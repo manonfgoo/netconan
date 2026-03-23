@@ -106,6 +106,10 @@ cisco_user_lines = [
     ("username noc secret sha512 $6$rounds=100000$hash", "noc"),
     ("username Someone privilege 15 password 7 122A001901", "Someone"),
     ("username Someone role network-admin password 5 $1$salt$hash", "Someone"),
+    (
+        "username maxmusertmann sha256-password 8 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 privilege 15 role sysadmin",
+        "maxmusertmann",
+    ),
 ]
 
 # Test data: (line, expected_user) — Cisco bsd-username (TACACS+)

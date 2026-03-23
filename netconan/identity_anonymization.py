@@ -21,12 +21,14 @@ import re
 
 # Cisco/Arista username with view (must be checked before plain username regex)
 _CISCO_USER_VIEW_REGEX = re.compile(
-    r"username\s+(?P<user>\S+)\s+view\s+(?P<view>\S+)" r"(?=\s+(?:password|secret)\s)"
+    r"username\s+(?P<user>\S+)\s+view\s+(?P<view>\S+)"
+    r"(?=\s+(?:sha256-password|password|secret)\s)"
 )
 
 # Cisco/Arista username without view
 _CISCO_USER_REGEX = re.compile(
-    r"username\s+(?P<user>\S+)" r"(?=(?:\s+\S+)*\s+(?:password|secret)\s)"
+    r"username\s+(?P<user>\S+)"
+    r"(?=(?:\s+\S+)*\s+(?:sha256-password|password|secret)\s)"
 )
 
 # Cisco bsd-username (TACACS+ attribute)
