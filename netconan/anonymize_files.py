@@ -24,6 +24,7 @@ import string
 import sys
 
 from .default_reserved_words import default_reserved_words
+from .identity_anonymization import generate_identity_regexes, replace_identities
 from .ip_anonymization import IpAnonymizer, IpV6Anonymizer, anonymize_ip_addr
 from .sensitive_item_removal import (
     AsNumberAnonymizer,
@@ -45,6 +46,7 @@ class FileAnonymizer:
         self,
         anon_pwd,
         anon_ip,
+        anon_identities=False,
         salt=None,
         sensitive_words=None,
         undo_ip_anon=False,
@@ -58,6 +60,8 @@ class FileAnonymizer:
     ):
         """Creates anonymizer classes."""
         self.undo_ip_anon = undo_ip_anon
+        self.identity_regexes = None
+        self.identity_lookup = None
 
         self.anonymizer4 = None
         self.anonymizer6 = None
@@ -82,6 +86,9 @@ class FileAnonymizer:
         if anon_pwd:
             self.compiled_regexes = generate_default_sensitive_item_regexes()
             self.pwd_lookup = {}
+        if anon_identities:
+            self.identity_regexes = generate_identity_regexes()
+            self.identity_lookup = {}
         if reserved_words is not None:
             default_reserved_words.update(reserved_words)
         if sensitive_words is not None:
@@ -123,6 +130,14 @@ class FileAnonymizer:
         """
         for line in in_io.readlines():
             output_line = line
+            if self.identity_regexes is not None and self.identity_lookup is not None:
+                output_line = replace_identities(
+                    self.identity_regexes,
+                    output_line,
+                    self.identity_lookup,
+                    self.salt,
+                    default_reserved_words,
+                )
             if self.compiled_regexes is not None and self.pwd_lookup is not None:
                 output_line = replace_matching_item(
                     self.compiled_regexes, output_line, self.pwd_lookup, self.salt
@@ -170,6 +185,7 @@ def anonymize_files(
     anon_ssh_keys=False,
     preserve_suffix_v4=None,
     preserve_suffix_v6=None,
+    anon_identities=False,
 ):
     """Anonymize each file in input and save to output."""
     use_stdin = input_path == "-"
@@ -210,6 +226,7 @@ def anonymize_files(
             )
 
     file_anonymizer = FileAnonymizer(
+        anon_identities=anon_identities,
         anon_ip=anon_ip,
         anon_pwd=anon_pwd,
         as_numbers=as_numbers,
