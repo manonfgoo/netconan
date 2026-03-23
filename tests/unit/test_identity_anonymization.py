@@ -1,0 +1,401 @@
+"""Test identity anonymization."""
+
+#   Copyright 2018 Intentionet
+#
+#   Licensed under the Apache License, Version 2.0 (the "License");
+#   you may not use this file except in compliance with the License.
+#   You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#   Unless required by applicable law or agreed to in writing, software
+#   distributed under the License is distributed on an "AS IS" BASIS,
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   See the License for the specific language governing permissions and
+#   limitations under the License.
+
+import re
+
+import pytest
+
+from netconan.identity_anonymization import (
+    anonymize_identity,
+    generate_identity_regexes,
+    replace_identities,
+)
+
+SALT = "testSalt"
+
+# Reserved words that should not be anonymized (subset for testing)
+RESERVED_WORDS = {
+    "password",
+    "secret",
+    "auth",
+    "authentication",
+    "view",
+    "v3",
+    "monitoring",
+    "all",
+}
+
+
+class TestAnonymizeIdentity:
+    """Tests for anonymize_identity()."""
+
+    def test_determinism(self):
+        """Same name + salt always produces same output."""
+        lookup = {}
+        result1 = anonymize_identity("admin", "user", lookup, SALT)
+        lookup2 = {}
+        result2 = anonymize_identity("admin", "user", lookup2, SALT)
+        assert result1 == result2
+
+    def test_format(self):
+        """Output matches {prefix}_{8-char-base32} pattern."""
+        lookup = {}
+        result = anonymize_identity("admin", "user", lookup, SALT)
+        assert re.match(r"^user_[a-z2-7]{8}$", result)
+
+    def test_different_names(self):
+        """Different names produce different hashes."""
+        lookup = {}
+        result1 = anonymize_identity("admin", "user", lookup, SALT)
+        result2 = anonymize_identity("operator", "user", lookup, SALT)
+        assert result1 != result2
+
+    def test_different_salts(self):
+        """Different salts produce different hashes."""
+        lookup1 = {}
+        result1 = anonymize_identity("admin", "user", lookup1, "salt1")
+        lookup2 = {}
+        result2 = anonymize_identity("admin", "user", lookup2, "salt2")
+        assert result1 != result2
+
+    def test_same_name_different_prefix(self):
+        """Same name with different prefixes produces different output."""
+        lookup = {}
+        result_user = anonymize_identity("admin", "user", lookup, SALT)
+        result_group = anonymize_identity("admin", "group", lookup, SALT)
+        assert result_user != result_group
+
+    def test_lookup_caching(self):
+        """Cached value is returned on subsequent calls."""
+        lookup = {}
+        result1 = anonymize_identity("admin", "user", lookup, SALT)
+        result2 = anonymize_identity("admin", "user", lookup, SALT)
+        assert result1 == result2
+        assert ("user", "admin") in lookup
+
+
+# Test data: (line, expected_user, expected_view)
+cisco_user_view_lines = [
+    (
+        "username Someone view Someview password 7 122A00190102180D3C2E",
+        "Someone",
+        "Someview",
+    ),
+    ("username Someone view Someview secret 5 $1$salt$hash", "Someone", "Someview"),
+]
+
+# Test data: (line, expected_user)
+cisco_user_lines = [
+    ("username Someone password 0 Pwd", "Someone"),
+    ("username Someone password 7 122A00190102180D3C2E", "Someone"),
+    ("username Someone secret 5 $1$salt$ABCDEFGHIJKLMNOPQRS", "Someone"),
+    ("username Someone secret sha512 $6$salt$hash", "Someone"),
+    ("username noc secret sha512 $6$rounds=100000$hash", "noc"),
+    ("username Someone privilege 15 password 7 122A001901", "Someone"),
+    ("username Someone role network-admin password 5 $1$salt$hash", "Someone"),
+]
+
+# Test data: (line, expected_user, expected_rhost)
+snmp_user_lines = [
+    (
+        "snmp-server user Someone Somegroup v3 auth sha Secret123 priv aes 128 PrivSecret",
+        "Someone",
+        None,
+    ),
+    (
+        "snmp-server user Someone Somegroup v3 auth md5 Secret123",
+        "Someone",
+        None,
+    ),
+    (
+        "snmp-server user Someone Somegroup v3 encrypted auth sha Secret123 priv aes 128 PrivSecret",
+        "Someone",
+        None,
+    ),
+    (
+        "snmp-server user Someone Somegroup auth sha Secret123 priv aes 128 PrivSecret",
+        "Someone",
+        None,
+    ),
+    (
+        "snmp-server user Someone Somegroup remote Crap v3 auth md5 Secret123 priv des56 PrivSecret",
+        "Someone",
+        "Crap",
+    ),
+    (
+        "snmp-server user Someone Somegroup remote Crap auth md5 Secret123",
+        "Someone",
+        "Crap",
+    ),
+]
+
+# Test data: (line, expected_user, expected_fullname) — Juniper set-style user+fullname
+juniper_set_user_fullname_lines = [
+    (
+        'set system login user rancid full-name "RANCID User"',
+        "rancid",
+        "RANCID User",
+    ),
+    (
+        'set groups MyGroup system login user netadmin full-name "Net Admin"',
+        "netadmin",
+        "Net Admin",
+    ),
+    (
+        "set system login user admin full-name Admin",
+        "admin",
+        "Admin",
+    ),
+]
+
+# Test data: (line, expected_user) — Juniper set-style user (broadened)
+juniper_set_user_lines = [
+    (
+        'set system login user admin authentication encrypted-password "$6$hash"',
+        "admin",
+    ),
+    (
+        'set system login user operator authentication plain-text-password "pwd123"',
+        "operator",
+    ),
+    (
+        'set system login user admin authentication ssh-rsa "AAAA..."',
+        "admin",
+    ),
+    (
+        "set groups MyGroup system login user rancid uid 164",
+        "rancid",
+    ),
+    (
+        "set groups MyGroup system login user rancid class super-user",
+        "rancid",
+    ),
+]
+
+
+class TestRegexMatching:
+    """Tests for identity regex matching."""
+
+    @pytest.mark.parametrize("line,expected_user,expected_view", cisco_user_view_lines)
+    def test_cisco_user_view_regex(self, line, expected_user, expected_view):
+        """Cisco username+view regex matches correctly."""
+        regexes = generate_identity_regexes()
+        regex = regexes[0][0]  # First regex is user+view
+        match = regex.search(line)
+        assert match is not None, f"Should match: {line}"
+        assert match.group("user") == expected_user
+        assert match.group("view") == expected_view
+
+    @pytest.mark.parametrize("line,expected_user", cisco_user_lines)
+    def test_cisco_user_regex(self, line, expected_user):
+        """Cisco username regex matches correctly."""
+        regexes = generate_identity_regexes()
+        regex = regexes[1][0]  # Second regex is plain username
+        match = regex.search(line)
+        assert match is not None, f"Should match: {line}"
+        assert match.group("user") == expected_user
+
+    @pytest.mark.parametrize("line,expected_user,expected_rhost", snmp_user_lines)
+    def test_snmp_user_regex(self, line, expected_user, expected_rhost):
+        """SNMP user regex matches correctly."""
+        regexes = generate_identity_regexes()
+        regex = regexes[2][0]  # Third regex is SNMP
+        match = regex.search(line)
+        assert match is not None, f"Should match: {line}"
+        assert match.group("user") == expected_user
+        if expected_rhost is not None:
+            assert match.group("rhost") == expected_rhost
+        else:
+            assert match.group("rhost") is None
+
+    @pytest.mark.parametrize(
+        "line,expected_user,expected_fullname", juniper_set_user_fullname_lines
+    )
+    def test_juniper_set_user_fullname_regex(
+        self, line, expected_user, expected_fullname
+    ):
+        """Juniper set-style user+fullname regex matches correctly."""
+        regexes = generate_identity_regexes()
+        regex = regexes[3][0]  # Fourth regex is set-style user+fullname
+        match = regex.search(line)
+        assert match is not None, f"Should match: {line}"
+        assert match.group("user") == expected_user
+        assert match.group("fullname") == expected_fullname
+
+    @pytest.mark.parametrize("line,expected_user", juniper_set_user_lines)
+    def test_juniper_set_user_regex(self, line, expected_user):
+        """Juniper set-style login user regex matches correctly."""
+        regexes = generate_identity_regexes()
+        regex = regexes[4][0]  # Fifth regex is set-style user
+        match = regex.search(line)
+        assert match is not None, f"Should match: {line}"
+        assert match.group("user") == expected_user
+
+
+# Identity-only lines (replaced by --anonymize-identities)
+all_identity_lines = (
+    [(line, user) for line, user, _ in cisco_user_view_lines]
+    + [(line, user) for line, user in cisco_user_lines]
+    + [(line, user) for line, user, _ in snmp_user_lines]
+    + [(line, user) for line, user, _ in juniper_set_user_fullname_lines]
+    + [(line, user) for line, user in juniper_set_user_lines]
+)
+
+
+class TestReplaceIdentities:
+    """Tests for replace_identities() with identity regexes."""
+
+    @pytest.mark.parametrize("line,original_user", all_identity_lines)
+    def test_identity_replaced(self, line, original_user):
+        """Original identity name does not appear in output."""
+        regexes = generate_identity_regexes()
+        lookup = {}
+        result = replace_identities(regexes, line, lookup, SALT, RESERVED_WORDS)
+        assert original_user not in result
+
+    @pytest.mark.parametrize("line,original_name", all_identity_lines)
+    def test_replacement_format(self, line, original_name):
+        """Output contains a properly formatted replacement prefix."""
+        regexes = generate_identity_regexes()
+        lookup = {}
+        result = replace_identities(regexes, line, lookup, SALT, RESERVED_WORDS)
+        # At least one anonymized identity prefix should appear
+        assert any(
+            prefix + "_" in result for prefix in ("user", "view", "fullname", "rhost")
+        )
+
+    def test_context_preserved_cisco(self):
+        """Command keywords and trailing content are preserved."""
+        regexes = generate_identity_regexes()
+        lookup = {}
+        line = "username Someone password 7 122A00190102180D3C2E"
+        result = replace_identities(regexes, line, lookup, SALT, RESERVED_WORDS)
+        assert result.startswith("username ")
+        assert " password 7 122A00190102180D3C2E" in result
+
+    def test_context_preserved_snmp(self):
+        """SNMP command structure is preserved."""
+        regexes = generate_identity_regexes()
+        lookup = {}
+        line = "snmp-server user Someone Somegroup v3 auth sha Secret123 priv aes 128 PrivSecret"
+        result = replace_identities(regexes, line, lookup, SALT, RESERVED_WORDS)
+        assert result.startswith("snmp-server user ")
+        assert " v3 auth sha Secret123 priv aes 128 PrivSecret" in result
+
+    def test_context_preserved_snmp_remote(self):
+        """SNMP remote host structure is preserved (identity pass replaces user+rhost)."""
+        regexes = generate_identity_regexes()
+        lookup = {}
+        line = "snmp-server user Someone Somegroup remote Crap v3 auth md5 Secret123 priv des56 PrivSecret"
+        result = replace_identities(regexes, line, lookup, SALT, RESERVED_WORDS)
+        assert result.startswith("snmp-server user ")
+        assert " remote " in result
+        assert " v3 auth md5 Secret123 priv des56 PrivSecret" in result
+        # User and rhost replaced by identity pass
+        assert "Someone" not in result
+        assert "Crap" not in result
+        # Group is NOT replaced by identity pass (needs --anonymize-groups)
+        assert "Somegroup" in result
+
+    def test_context_preserved_juniper(self):
+        """Juniper command structure is preserved."""
+        regexes = generate_identity_regexes()
+        lookup = {}
+        line = 'set system login user admin authentication encrypted-password "$6$hash"'
+        result = replace_identities(regexes, line, lookup, SALT, RESERVED_WORDS)
+        assert result.startswith("set system login user ")
+        assert ' authentication encrypted-password "$6$hash"' in result
+
+    def test_lookup_consistency(self):
+        """Same name across lines produces same replacement."""
+        regexes = generate_identity_regexes()
+        lookup = {}
+        line1 = "username admin password 7 122A00190102180D3C2E"
+        line2 = "username admin secret 5 $1$salt$hash"
+        result1 = replace_identities(regexes, line1, lookup, SALT, RESERVED_WORDS)
+        result2 = replace_identities(regexes, line2, lookup, SALT, RESERVED_WORDS)
+        # Extract the replacement from both lines
+        anon_name = lookup[("user", "admin")]
+        assert anon_name in result1
+        assert anon_name in result2
+
+    def test_non_identity_line_unchanged(self):
+        """Lines without identity patterns pass through unchanged."""
+        regexes = generate_identity_regexes()
+        lookup = {}
+        lines = [
+            "ip address 10.0.0.1 255.255.255.0\n",
+            "hostname router1\n",
+            "interface GigabitEthernet0/0\n",
+            "! This is a comment\n",
+        ]
+        for line in lines:
+            result = replace_identities(regexes, line, lookup, SALT, RESERVED_WORDS)
+            assert result == line
+
+    def test_no_false_positive_description(self):
+        """Description lines with 'username' keyword are not matched."""
+        regexes = generate_identity_regexes()
+        lookup = {}
+        line = " description Link to username server\n"
+        result = replace_identities(regexes, line, lookup, SALT, RESERVED_WORDS)
+        assert result == line
+
+    def test_reserved_word_skipped(self):
+        """Reserved words in identity positions are not replaced."""
+        regexes = generate_identity_regexes()
+        lookup = {}
+        # "v3" is in reserved words, so the group name "v3" should not be replaced
+        line = "snmp-server user Someone v3 v3 auth sha Secret123"
+        result = replace_identities(regexes, line, lookup, SALT, RESERVED_WORDS)
+        assert "v3 auth" in result
+        # But "Someone" should be replaced
+        assert "Someone" not in result
+
+    def test_view_in_user_view_line(self):
+        """Both user and view are replaced in username+view lines."""
+        regexes = generate_identity_regexes()
+        lookup = {}
+        line = "username Someone view Someview password 7 122A00190102180D3C2E"
+        result = replace_identities(regexes, line, lookup, SALT, RESERVED_WORDS)
+        assert "Someone" not in result
+        assert "Someview" not in result
+        assert "user_" in result
+        assert "view_" in result
+        assert " password 7 122A00190102180D3C2E" in result
+
+    # --- Set-style context preservation tests ---
+
+    def test_context_preserved_set_user_uid(self):
+        """Set-style user with uid is anonymized, structure preserved."""
+        regexes = generate_identity_regexes()
+        lookup = {}
+        line = "set groups MyGroup system login user rancid uid 164"
+        result = replace_identities(regexes, line, lookup, SALT, RESERVED_WORDS)
+        assert "rancid" not in result
+        assert "user_" in result
+        assert " uid 164" in result
+
+    def test_context_preserved_set_user_fullname(self):
+        """Set-style user+fullname has both anonymized."""
+        regexes = generate_identity_regexes()
+        lookup = {}
+        line = 'set system login user rancid full-name "RANCID User"'
+        result = replace_identities(regexes, line, lookup, SALT, RESERVED_WORDS)
+        assert "rancid" not in result
+        assert "RANCID User" not in result
+        assert "user_" in result
+        assert "fullname_" in result
