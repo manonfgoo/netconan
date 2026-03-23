@@ -121,6 +121,10 @@ default_pwd_line_regexes = [
     [(r"(message-digest-key \d+ md5 (7|encrypted)) (.*)", None)],
     [(r"(.*?neighbor.*?) (\S*) password (.*)", None)],
     [(r"(wlccp \S+ username (\S+)( .*)? password( \d)?) (\S+)(.*)", None)],
+    # Juniper encrypted-password with capture group (replaces scrub-only version below).
+    # TODO: delete the original encrypted-password scrubber in the JUNOS section
+    # below; it is left intact for now to avoid merge conflicts.
+    [(r"(?P<prefix>(\S* )*encrypted-password )([^ ;]+)", 3)],
     # These are regexes for JUNOS
     # TODO(https://github.com/intentionet/netconan/issues/4):
     # Follow-up on these.  They were modified from RANCID's regexes and currently:
