@@ -4,7 +4,7 @@ import re
 
 from netconan.netconan import main
 
-# Identity anonymization test data (Cisco/Arista, SNMP, Juniper set-style)
+# Identity anonymization test data (Cisco/Arista, SNMP, Juniper set-style + hierarchical)
 IDENTITY_INPUT = (
     "username jsmith password 7 122A00190102180D3C2E\n"
     "username jsmith view MonitorView secret 5 $1$salt$ABCDEFGHIJKLMNOPQRS\n"
@@ -12,9 +12,15 @@ IDENTITY_INPUT = (
     "snmp-server user jsmith Operators v3 auth sha Secret123 priv aes 128 PrivSecret\n"
     "snmp-server user jsmith Operators remote RemHost01 v3 auth md5 Secret123 priv des56 PrivSecret\n"
     'set system login user netadmin authentication encrypted-password "$6$hash"\n'
+    # Juniper hierarchical patterns
+    "    user rancid {\n"
+    "    full-name RANCID;\n"
+    '    full-name "Network Operations Center";\n'
+    "                security-name observium {\n"
     # Juniper set-style patterns
     "set groups EDGE system login user svcacct uid 164\n"
     'set system login user svcacct full-name "Service Account"\n'
+    "set snmp v3 usm local-engine user myuser01 security-name observium\n"
     "ip address 10.0.0.1 255.255.255.0\n"
     "hostname router1\n"
 )
@@ -49,6 +55,11 @@ def test_end_to_end_identity_anonymization(tmpdir):
     assert "nocteam" not in output
     assert "RemHost01" not in output
     assert "netadmin" not in output
+    # Hierarchical pattern names should be anonymized
+    assert "rancid" not in output.lower().replace("user_", "")
+    assert "RANCID" not in output
+    assert "Network Operations Center" not in output
+    assert "observium" not in output
     # Set-style pattern names should be anonymized
     assert "svcacct" not in output
     assert "Service Account" not in output
@@ -73,15 +84,29 @@ def test_end_to_end_identity_anonymization(tmpdir):
     assert output_lines[5].startswith("set system login user ")
     assert " authentication encrypted-password " in output_lines[5]
 
-    # Set-style lines (6-7)
-    assert "user_" in output_lines[6]  # set groups ... user svcacct uid 164
-    assert " uid 164" in output_lines[6]
-    assert "user_" in output_lines[7]  # set system login user svcacct full-name ...
+    # Hierarchical pattern structure preserved (lines 6-9)
+    assert output_lines[6].rstrip().endswith("{")  # user ... {
+    assert "user_" in output_lines[6]
+    assert "full-name" in output_lines[7]  # full-name ...;
+    assert output_lines[7].rstrip().endswith(";")
     assert "fullname_" in output_lines[7]
+    assert "full-name" in output_lines[8]  # full-name "...";
+    assert output_lines[8].rstrip().endswith(";")
+    assert "fullname_" in output_lines[8]
+    assert "security-name" in output_lines[9]  # security-name ... {
+    assert output_lines[9].rstrip().endswith("{")
+
+    # Set-style lines (10-12)
+    assert "user_" in output_lines[10]  # set groups ... user svcacct uid 164
+    assert " uid 164" in output_lines[10]
+    assert "user_" in output_lines[11]  # set system login user svcacct full-name ...
+    assert "fullname_" in output_lines[11]
+    assert "security-name" in output_lines[12]  # security-name set-style
+    assert "user_" in output_lines[12]
 
     # Non-identity lines should pass through unchanged
-    assert output_lines[8] == "ip address 10.0.0.1 255.255.255.0"
-    assert output_lines[9] == "hostname router1"
+    assert output_lines[13] == "ip address 10.0.0.1 255.255.255.0"
+    assert output_lines[14] == "hostname router1"
 
     # Same username across lines should produce same replacement (determinism)
     user_replacements = set()
@@ -91,9 +116,9 @@ def test_end_to_end_identity_anonymization(tmpdir):
         user_replacements.add(match.group())
     assert len(user_replacements) == 1, "Same username should produce same replacement"
 
-    # svcacct appears in lines 6 and 7 — should produce same replacement
+    # svcacct appears in lines 10 and 11 — should produce same replacement
     svcacct_replacements = set()
-    for i in [6, 7]:
+    for i in [10, 11]:
         match = re.search(r"user_[a-z2-7]{8}", output_lines[i])
         assert match is not None, f"No user_ replacement in line {i}: {output_lines[i]}"
         svcacct_replacements.add(match.group())

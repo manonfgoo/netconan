@@ -185,6 +185,34 @@ juniper_set_user_lines = [
     ),
 ]
 
+# Test data: (line, expected_fullname) — Juniper hierarchical full-name
+fullname_lines = [
+    ("    full-name RANCID;", "RANCID"),
+    ('    full-name "Network Operations Center";', "Network Operations Center"),
+]
+
+# Test data: (line, expected_user) — SNMP v3 security-name
+security_name_lines = [
+    ("                security-name observium {", "observium"),
+    ("    security-name snmpuser;", "snmpuser"),
+    (
+        "set snmp v3 usm local-engine user myuser01 security-name observium",
+        "observium",
+    ),
+]
+
+# Test data: (line, expected_user) — Juniper hierarchical user block
+hier_user_lines = [
+    ("    user rancid {", "rancid"),
+    ("        user operator {", "operator"),
+]
+
+# Lines that should NOT match any identity regex (false positives)
+false_positive_lines = [
+    "    read-view all;",
+    "    class RANCID {",
+]
+
 
 class TestRegexMatching:
     """Tests for identity regex matching."""
@@ -244,6 +272,42 @@ class TestRegexMatching:
         assert match is not None, f"Should match: {line}"
         assert match.group("user") == expected_user
 
+    @pytest.mark.parametrize("line,expected_fullname", fullname_lines)
+    def test_fullname_regex(self, line, expected_fullname):
+        """Juniper hierarchical full-name regex matches correctly."""
+        regexes = generate_identity_regexes()
+        regex = regexes[5][0]  # Sixth regex is full-name
+        match = regex.search(line)
+        assert match is not None, f"Should match: {line}"
+        assert match.group("fullname") == expected_fullname
+
+    @pytest.mark.parametrize("line,expected_user", security_name_lines)
+    def test_security_name_regex(self, line, expected_user):
+        """SNMP v3 security-name regex matches correctly."""
+        regexes = generate_identity_regexes()
+        regex = regexes[6][0]  # Seventh regex is security-name
+        match = regex.search(line)
+        assert match is not None, f"Should match: {line}"
+        assert match.group("user") == expected_user
+
+    @pytest.mark.parametrize("line,expected_user", hier_user_lines)
+    def test_juniper_hier_user_regex(self, line, expected_user):
+        """Juniper hierarchical user block regex matches correctly."""
+        regexes = generate_identity_regexes()
+        regex = regexes[7][0]  # Eighth regex is hierarchical user
+        match = regex.search(line)
+        assert match is not None, f"Should match: {line}"
+        assert match.group("user") == expected_user
+
+    @pytest.mark.parametrize("line", false_positive_lines)
+    def test_false_positive_lines_no_identity_match(self, line):
+        """Lines that look similar but should NOT match any identity regex."""
+        for regex, _ in generate_identity_regexes():
+            match = regex.search(line)
+            assert (
+                match is None
+            ), f"Should NOT match: {line} (matched by {regex.pattern})"
+
 
 # Identity-only lines (replaced by --anonymize-identities)
 all_identity_lines = (
@@ -252,6 +316,9 @@ all_identity_lines = (
     + [(line, user) for line, user, _ in snmp_user_lines]
     + [(line, user) for line, user, _ in juniper_set_user_fullname_lines]
     + [(line, user) for line, user in juniper_set_user_lines]
+    + [(line, name) for line, name in fullname_lines]
+    + [(line, user) for line, user in security_name_lines]
+    + [(line, user) for line, user in hier_user_lines]
 )
 
 
@@ -399,3 +466,58 @@ class TestReplaceIdentities:
         assert "RANCID User" not in result
         assert "user_" in result
         assert "fullname_" in result
+
+    # --- Hierarchical pattern context preservation tests ---
+
+    def test_context_preserved_hier_user(self):
+        """Hierarchical user block structure is preserved."""
+        regexes = generate_identity_regexes()
+        lookup = {}
+        line = "    user rancid {"
+        result = replace_identities(regexes, line, lookup, SALT, RESERVED_WORDS)
+        assert result.endswith("{")
+        assert "rancid" not in result
+        assert "user_" in result
+
+    def test_context_preserved_fullname_unquoted(self):
+        """Unquoted full-name value is anonymized, structure preserved."""
+        regexes = generate_identity_regexes()
+        lookup = {}
+        line = "    full-name RANCID;"
+        result = replace_identities(regexes, line, lookup, SALT, RESERVED_WORDS)
+        assert "full-name" in result
+        assert result.rstrip().endswith(";")
+        assert "RANCID" not in result
+        assert "fullname_" in result
+
+    def test_context_preserved_fullname_quoted(self):
+        """Quoted full-name value is anonymized, quotes preserved."""
+        regexes = generate_identity_regexes()
+        lookup = {}
+        line = '    full-name "Network Operations Center";'
+        result = replace_identities(regexes, line, lookup, SALT, RESERVED_WORDS)
+        assert "full-name" in result
+        assert result.rstrip().endswith(";")
+        assert "Network Operations Center" not in result
+        assert "fullname_" in result
+
+    def test_context_preserved_security_name(self):
+        """Security-name block structure is preserved."""
+        regexes = generate_identity_regexes()
+        lookup = {}
+        line = "                security-name observium {"
+        result = replace_identities(regexes, line, lookup, SALT, RESERVED_WORDS)
+        assert "security-name" in result
+        assert result.endswith("{")
+        assert "observium" not in result
+        assert "user_" in result
+
+    # --- False positive tests for hierarchical patterns ---
+
+    @pytest.mark.parametrize("line", false_positive_lines)
+    def test_hier_false_positives_unchanged(self, line):
+        """Lines that look similar to hierarchical patterns pass through unchanged."""
+        regexes = generate_identity_regexes()
+        lookup = {}
+        result = replace_identities(regexes, line, lookup, SALT, RESERVED_WORDS)
+        assert result == line

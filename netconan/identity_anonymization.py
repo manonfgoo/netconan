@@ -48,6 +48,17 @@ _JUNIPER_SET_USER_REGEX = re.compile(
     r"(?=\s+(?:authentication|full-name|uid|class)\s)"
 )
 
+# Juniper hierarchical full-name (quoted or unquoted)
+_FULLNAME_REGEX = re.compile(r'full-name\s+"?(?P<fullname>[^";]+)"?\s*;')
+
+# SNMP v3 security-name (hierarchical and set-style)
+_SNMP_SECURITY_NAME_REGEX = re.compile(
+    r"security-name\s+(?P<user>[^\s{;]+)(?=\s|[{;]|$)"
+)
+
+# Juniper hierarchical user block opener
+_JUNIPER_HIER_USER_REGEX = re.compile(r"^\s*user\s+(?P<user>\S+)\s*\{")
+
 
 def anonymize_identity(name, prefix, lookup, salt):
     """Generate a deterministic anonymized identity name.
@@ -85,14 +96,20 @@ def generate_identity_regexes():
         ordered most-specific first.
     """
     return [
+        # Existing flat-style patterns (most specific first)
         (_CISCO_USER_VIEW_REGEX, [("user", "user"), ("view", "view")]),
         (_CISCO_USER_REGEX, [("user", "user")]),
         (_SNMP_USER_REGEX, [("user", "user"), ("rhost", "rhost")]),
+        # Juniper set-style (most specific first: user+fullname, then user-only)
         (
             _JUNIPER_SET_USER_FULLNAME_REGEX,
             [("user", "user"), ("fullname", "fullname")],
         ),
         (_JUNIPER_SET_USER_REGEX, [("user", "user")]),
+        # Juniper hierarchical patterns (less specific, tried last)
+        (_FULLNAME_REGEX, [("fullname", "fullname")]),
+        (_SNMP_SECURITY_NAME_REGEX, [("user", "user")]),
+        (_JUNIPER_HIER_USER_REGEX, [("user", "user")]),
     ]
 
 

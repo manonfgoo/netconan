@@ -23,10 +23,7 @@ import random
 import string
 
 from .default_reserved_words import default_reserved_words
-from .identity_anonymization import (
-    generate_identity_regexes,
-    replace_identities,
-)
+from .identity_anonymization import generate_identity_regexes, replace_identities
 from .ip_anonymization import IpAnonymizer, IpV6Anonymizer, anonymize_ip_addr
 from .sensitive_item_removal import (
     AsNumberAnonymizer,
