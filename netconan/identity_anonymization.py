@@ -29,6 +29,9 @@ _CISCO_USER_REGEX = re.compile(
     r"username\s+(?P<user>\S+)" r"(?=(?:\s+\S+)*\s+(?:password|secret)\s)"
 )
 
+# Cisco bsd-username (TACACS+ attribute)
+_BSD_USERNAME_REGEX = re.compile(r"bsd-username\s+(?P<user>\S+)(?=\s+secret\s)")
+
 # SNMP server user + optional remote host (group capture excluded from identity pass)
 _SNMP_USER_REGEX = re.compile(
     r"snmp-server\s+user\s+(?P<user>\S+)\s+\S+"
@@ -99,6 +102,7 @@ def generate_identity_regexes():
         # Existing flat-style patterns (most specific first)
         (_CISCO_USER_VIEW_REGEX, [("user", "user"), ("view", "view")]),
         (_CISCO_USER_REGEX, [("user", "user")]),
+        (_BSD_USERNAME_REGEX, [("user", "user")]),
         (_SNMP_USER_REGEX, [("user", "user"), ("rhost", "rhost")]),
         # Juniper set-style (most specific first: user+fullname, then user-only)
         (

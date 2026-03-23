@@ -108,6 +108,15 @@ cisco_user_lines = [
     ("username Someone role network-admin password 5 $1$salt$hash", "Someone"),
 ]
 
+# Test data: (line, expected_user) — Cisco bsd-username (TACACS+)
+bsd_username_lines = [
+    (
+        "bsd-username maxmustermann secret $1$sqLg/clL$0000000000000000000000000$",
+        "maxmustermann",
+    ),
+    ("bsd-username netops secret 5 $1$salt$hash", "netops"),
+]
+
 # Test data: (line, expected_user, expected_rhost)
 snmp_user_lines = [
     (
@@ -236,11 +245,20 @@ class TestRegexMatching:
         assert match is not None, f"Should match: {line}"
         assert match.group("user") == expected_user
 
+    @pytest.mark.parametrize("line,expected_user", bsd_username_lines)
+    def test_bsd_username_regex(self, line, expected_user):
+        """Cisco bsd-username regex matches correctly."""
+        regexes = generate_identity_regexes()
+        regex = regexes[2][0]  # Third regex is bsd-username
+        match = regex.search(line)
+        assert match is not None, f"Should match: {line}"
+        assert match.group("user") == expected_user
+
     @pytest.mark.parametrize("line,expected_user,expected_rhost", snmp_user_lines)
     def test_snmp_user_regex(self, line, expected_user, expected_rhost):
         """SNMP user regex matches correctly."""
         regexes = generate_identity_regexes()
-        regex = regexes[2][0]  # Third regex is SNMP
+        regex = regexes[3][0]  # Fourth regex is SNMP
         match = regex.search(line)
         assert match is not None, f"Should match: {line}"
         assert match.group("user") == expected_user
@@ -257,7 +275,7 @@ class TestRegexMatching:
     ):
         """Juniper set-style user+fullname regex matches correctly."""
         regexes = generate_identity_regexes()
-        regex = regexes[3][0]  # Fourth regex is set-style user+fullname
+        regex = regexes[4][0]  # Fifth regex is set-style user+fullname
         match = regex.search(line)
         assert match is not None, f"Should match: {line}"
         assert match.group("user") == expected_user
@@ -267,7 +285,7 @@ class TestRegexMatching:
     def test_juniper_set_user_regex(self, line, expected_user):
         """Juniper set-style login user regex matches correctly."""
         regexes = generate_identity_regexes()
-        regex = regexes[4][0]  # Fifth regex is set-style user
+        regex = regexes[5][0]  # Sixth regex is set-style user
         match = regex.search(line)
         assert match is not None, f"Should match: {line}"
         assert match.group("user") == expected_user
@@ -276,7 +294,7 @@ class TestRegexMatching:
     def test_fullname_regex(self, line, expected_fullname):
         """Juniper hierarchical full-name regex matches correctly."""
         regexes = generate_identity_regexes()
-        regex = regexes[5][0]  # Sixth regex is full-name
+        regex = regexes[6][0]  # Seventh regex is full-name
         match = regex.search(line)
         assert match is not None, f"Should match: {line}"
         assert match.group("fullname") == expected_fullname
@@ -285,7 +303,7 @@ class TestRegexMatching:
     def test_security_name_regex(self, line, expected_user):
         """SNMP v3 security-name regex matches correctly."""
         regexes = generate_identity_regexes()
-        regex = regexes[6][0]  # Seventh regex is security-name
+        regex = regexes[7][0]  # Eighth regex is security-name
         match = regex.search(line)
         assert match is not None, f"Should match: {line}"
         assert match.group("user") == expected_user
@@ -294,7 +312,7 @@ class TestRegexMatching:
     def test_juniper_hier_user_regex(self, line, expected_user):
         """Juniper hierarchical user block regex matches correctly."""
         regexes = generate_identity_regexes()
-        regex = regexes[7][0]  # Eighth regex is hierarchical user
+        regex = regexes[8][0]  # Ninth regex is hierarchical user
         match = regex.search(line)
         assert match is not None, f"Should match: {line}"
         assert match.group("user") == expected_user
@@ -313,6 +331,7 @@ class TestRegexMatching:
 all_identity_lines = (
     [(line, user) for line, user, _ in cisco_user_view_lines]
     + [(line, user) for line, user in cisco_user_lines]
+    + [(line, user) for line, user in bsd_username_lines]
     + [(line, user) for line, user, _ in snmp_user_lines]
     + [(line, user) for line, user, _ in juniper_set_user_fullname_lines]
     + [(line, user) for line, user in juniper_set_user_lines]
@@ -352,6 +371,18 @@ class TestReplaceIdentities:
         result = replace_identities(regexes, line, lookup, SALT, RESERVED_WORDS)
         assert result.startswith("username ")
         assert " password 7 122A00190102180D3C2E" in result
+
+    def test_context_preserved_bsd_username(self):
+        """bsd-username keyword and trailing secret are preserved."""
+        regexes = generate_identity_regexes()
+        lookup = {}
+        line = (
+            "bsd-username maxmustermann secret $1$sqLg/clL$0000000000000000000000000$"
+        )
+        result = replace_identities(regexes, line, lookup, SALT, RESERVED_WORDS)
+        assert result.startswith("bsd-username ")
+        assert " secret $1$sqLg/clL$0000000000000000000000000$" in result
+        assert "maxmustermann" not in result
 
     def test_context_preserved_snmp(self):
         """SNMP command structure is preserved."""
