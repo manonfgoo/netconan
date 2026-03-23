@@ -1,10 +1,10 @@
-"""End-to-end tests for identity anonymization."""
+"""End-to-end tests for identity and group anonymization."""
 
 import re
 
 from netconan.netconan import main
 
-# Identity anonymization test data (Cisco/Arista, SNMP, Juniper set-style + hierarchical)
+# Identity anonymization test data
 IDENTITY_INPUT = (
     "username jsmith password 7 122A00190102180D3C2E\n"
     "username jsmith view MonitorView secret 5 $1$salt$ABCDEFGHIJKLMNOPQRS\n"
@@ -17,17 +17,24 @@ IDENTITY_INPUT = (
     "    full-name RANCID;\n"
     '    full-name "Network Operations Center";\n'
     "                security-name observium {\n"
+    "            group netops {\n"
+    "        view myview {\n"
     # Juniper set-style patterns
     "set groups EDGE system login user svcacct uid 164\n"
     'set system login user svcacct full-name "Service Account"\n'
     "set snmp v3 usm local-engine user myuser01 security-name observium\n"
+    # Multi-group line (3 groups on one line)
+    "set groups EDGE protocols bgp group IBGP apply-groups OSPF\n"
+    # VACM set-style
+    "set snmp v3 vacm security-to-group security-model usm security-name observium group netops2\n"
+    "set snmp v3 vacm access group netops2 default-context-prefix security-model any security-level none read-view allview\n"
     "ip address 10.0.0.1 255.255.255.0\n"
     "hostname router1\n"
 )
 
 
 def test_end_to_end_identity_anonymization(tmpdir):
-    """Test identity anonymization with mixed Cisco/SNMP/Juniper input."""
+    """Test identity + group anonymization with mixed Cisco/SNMP/Juniper input."""
     filename = "identities.txt"
     input_dir = tmpdir.mkdir("input")
     input_dir.join(filename).write(IDENTITY_INPUT)
@@ -41,6 +48,7 @@ def test_end_to_end_identity_anonymization(tmpdir):
         "-s",
         "TESTSALT",
         "--anonymize-identities",
+        "--anonymize-groups",
     ]
     main(args)
 
@@ -53,6 +61,7 @@ def test_end_to_end_identity_anonymization(tmpdir):
     assert "jsmith" not in output
     assert "MonitorView" not in output
     assert "nocteam" not in output
+    assert "Operators" not in output
     assert "RemHost01" not in output
     assert "netadmin" not in output
     # Hierarchical pattern names should be anonymized
@@ -60,16 +69,21 @@ def test_end_to_end_identity_anonymization(tmpdir):
     assert "RANCID" not in output
     assert "Network Operations Center" not in output
     assert "observium" not in output
+    assert "netops" not in output
+    assert "myview" not in output
     # Set-style pattern names should be anonymized
     assert "svcacct" not in output
     assert "Service Account" not in output
-
-    # SNMP group names should NOT be anonymized (no --anonymize-groups)
-    assert "Operators" in output
+    assert "EDGE" not in output
+    assert "IBGP" not in output
+    assert "OSPF" not in output
+    assert "netops2" not in output
+    assert "allview" not in output
 
     # Replacement formats should be present
     assert "user_" in output
     assert "view_" in output
+    assert "group_" in output
     assert "rhost_" in output
     assert "fullname_" in output
 
@@ -84,7 +98,7 @@ def test_end_to_end_identity_anonymization(tmpdir):
     assert output_lines[5].startswith("set system login user ")
     assert " authentication encrypted-password " in output_lines[5]
 
-    # Hierarchical pattern structure preserved (lines 6-9)
+    # Hierarchical pattern structure preserved (lines 6-11)
     assert output_lines[6].rstrip().endswith("{")  # user ... {
     assert "user_" in output_lines[6]
     assert "full-name" in output_lines[7]  # full-name ...;
@@ -95,18 +109,31 @@ def test_end_to_end_identity_anonymization(tmpdir):
     assert "fullname_" in output_lines[8]
     assert "security-name" in output_lines[9]  # security-name ... {
     assert output_lines[9].rstrip().endswith("{")
+    assert output_lines[10].rstrip().endswith("{")  # group ... {
+    assert "group_" in output_lines[10]
+    assert output_lines[11].rstrip().endswith("{")  # view ... {
+    assert "view_" in output_lines[11]
 
-    # Set-style lines (10-12)
-    assert "user_" in output_lines[10]  # set groups ... user svcacct uid 164
-    assert " uid 164" in output_lines[10]
-    assert "user_" in output_lines[11]  # set system login user svcacct full-name ...
-    assert "fullname_" in output_lines[11]
-    assert "security-name" in output_lines[12]  # security-name set-style
-    assert "user_" in output_lines[12]
+    # Set-style lines (12-17)
+    assert "user_" in output_lines[12]  # set groups ... user svcacct uid 164
+    assert " uid 164" in output_lines[12]
+    assert "user_" in output_lines[13]  # set system login user svcacct full-name ...
+    assert "fullname_" in output_lines[13]
+    assert "security-name" in output_lines[14]  # security-name set-style
+    assert "user_" in output_lines[14]
+    # Multi-group line: all 3 group names replaced
+    assert output_lines[15].startswith("set groups ")
+    assert "group_" in output_lines[15]
+    # VACM lines
+    assert "security-to-group" in output_lines[16]
+    assert "group_" in output_lines[16]
+    assert "vacm" in output_lines[17]
+    assert "group_" in output_lines[17]
+    assert "view_" in output_lines[17]
 
     # Non-identity lines should pass through unchanged
-    assert output_lines[13] == "ip address 10.0.0.1 255.255.255.0"
-    assert output_lines[14] == "hostname router1"
+    assert output_lines[18] == "ip address 10.0.0.1 255.255.255.0"
+    assert output_lines[19] == "hostname router1"
 
     # Same username across lines should produce same replacement (determinism)
     user_replacements = set()
@@ -116,9 +143,9 @@ def test_end_to_end_identity_anonymization(tmpdir):
         user_replacements.add(match.group())
     assert len(user_replacements) == 1, "Same username should produce same replacement"
 
-    # svcacct appears in lines 10 and 11 — should produce same replacement
+    # svcacct appears in lines 12 and 13 — should produce same replacement
     svcacct_replacements = set()
-    for i in [10, 11]:
+    for i in [12, 13]:
         match = re.search(r"user_[a-z2-7]{8}", output_lines[i])
         assert match is not None, f"No user_ replacement in line {i}: {output_lines[i]}"
         svcacct_replacements.add(match.group())
@@ -140,7 +167,7 @@ def test_end_to_end_identity_anonymization_deterministic(tmpdir):
     output_dir1 = tmpdir.mkdir("output1")
     output_dir2 = tmpdir.mkdir("output2")
 
-    args_base = ["-s", "TESTSALT", "--anonymize-identities"]
+    args_base = ["-s", "TESTSALT", "--anonymize-identities", "--anonymize-groups"]
 
     main(args_base + ["-i", str(input_dir), "-o", str(output_dir1)])
     main(args_base + ["-i", str(input_dir), "-o", str(output_dir2)])
@@ -149,3 +176,109 @@ def test_end_to_end_identity_anonymization_deterministic(tmpdir):
         str(output_dir2.join(filename))
     ) as f2:
         assert f1.read() == f2.read()
+
+
+def test_end_to_end_group_anonymization_independent(tmpdir):
+    """Test --anonymize-groups alone: groups/views anonymized, usernames NOT."""
+    filename = "identities.txt"
+    input_dir = tmpdir.mkdir("input")
+    input_dir.join(filename).write(IDENTITY_INPUT)
+
+    output_dir = tmpdir.mkdir("output")
+    args = [
+        "-i",
+        str(input_dir),
+        "-o",
+        str(output_dir),
+        "-s",
+        "TESTSALT",
+        "--anonymize-groups",
+    ]
+    main(args)
+
+    with open(str(output_dir.join(filename))) as f:
+        output = f.read()
+
+    output_lines = output.strip().split("\n")
+
+    # Group/view names SHOULD be anonymized
+    assert "Operators" not in output
+    assert "netops" not in output
+    assert "myview" not in output
+    assert "EDGE" not in output
+    assert "IBGP" not in output
+    assert "OSPF" not in output
+    assert "netops2" not in output
+    assert "allview" not in output
+    assert "group_" in output
+    assert "view_" in output
+
+    # Usernames should NOT be anonymized (no --anonymize-identities)
+    assert "jsmith" in output
+    assert "nocteam" in output
+    assert "netadmin" in output
+    assert "rancid" in output
+    assert "RANCID" in output
+    assert "observium" in output
+    assert "svcacct" in output
+
+    # Non-identity lines should pass through unchanged
+    assert output_lines[-2] == "ip address 10.0.0.1 255.255.255.0"
+    assert output_lines[-1] == "hostname router1"
+
+
+def test_end_to_end_identity_without_groups(tmpdir):
+    """Test --anonymize-identities alone: usernames anonymized, groups/views NOT."""
+    filename = "identities.txt"
+    input_dir = tmpdir.mkdir("input")
+    input_dir.join(filename).write(IDENTITY_INPUT)
+
+    output_dir = tmpdir.mkdir("output")
+    args = [
+        "-i",
+        str(input_dir),
+        "-o",
+        str(output_dir),
+        "-s",
+        "TESTSALT",
+        "--anonymize-identities",
+    ]
+    main(args)
+
+    with open(str(output_dir.join(filename))) as f:
+        output = f.read()
+
+    output_lines = output.strip().split("\n")
+
+    # Usernames SHOULD be anonymized
+    assert "jsmith" not in output
+    assert "nocteam" not in output
+    assert "netadmin" not in output
+    assert "svcacct" not in output
+    assert "user_" in output
+    assert "fullname_" in output
+
+    # Cisco inline view SHOULD be anonymized (stays in identity regexes)
+    assert "MonitorView" not in output
+    assert "view_" in output
+
+    # SNMP group names should NOT be anonymized (needs --anonymize-groups)
+    assert "Operators" in output
+
+    # Hierarchical group/view should NOT be anonymized
+    assert "netops" in output
+    assert "myview" in output
+
+    # Set-style group names should NOT be anonymized
+    assert "EDGE" in output
+    assert "IBGP" in output
+    assert "OSPF" in output
+    assert "netops2" in output
+    assert "allview" in output
+
+    # Group prefix should NOT appear (no group anonymization)
+    assert "group_" not in output
+
+    # Non-identity lines should pass through unchanged
+    assert output_lines[-2] == "ip address 10.0.0.1 255.255.255.0"
+    assert output_lines[-1] == "hostname router1"

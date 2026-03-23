@@ -65,6 +65,12 @@ def _parse_args(argv):
         help="Anonymize IP addresses",
     )
     parser.add_argument(
+        "--anonymize-groups",
+        action="store_true",
+        default=False,
+        help="Anonymize group names in Cisco/Arista aaa, TACACS+, RADIUS, and Juniper login class lines. Replacement is deterministic from --salt.",
+    )
+    parser.add_argument(
         "--anonymize-identities",
         action="store_true",
         default=False,
@@ -226,6 +232,7 @@ def main(argv=sys.argv[1:]):
             sensitive_words,
             args.anonymize_passwords,
             args.anonymize_ips,
+            args.anonymize_groups,
             args.anonymize_identities,
             args.undo,
         ]
@@ -248,6 +255,7 @@ def main(argv=sys.argv[1:]):
             reserved_words,
             preserve_prefixes,
             preserve_addresses,
+            anon_groups=args.anonymize_groups,
             anon_identities=args.anonymize_identities,
             preserve_suffix_v4=args.preserve_host_bits,
             preserve_suffix_v6=args.preserve_host_bits,
