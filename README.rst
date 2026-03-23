@@ -67,6 +67,7 @@ Netconan can anonymize *many types of sensitive information*:
 * User-specified AS numbers (``--as-numbers``, ``-n``).  *Note that any number matching a specified AS number will be anonymized.*
 * Usernames and related identity fields in Cisco/Arista ``username``, ``snmp-server user``, and Juniper ``set system login user`` lines (``--anonymize-identities``).  Replacement is deterministic from ``--salt``.
 * SNMP group names, Juniper hierarchical/set-style group and view names, BGP group names, and VACM access group/view names (``--anonymize-groups``).  Replacement is deterministic from ``--salt``.
+* Description fields (``--anonymize-descriptions``).  *Description text is replaced with a deterministic hash, preserving surrounding quotes and semicolons.*
 
 
 Netconan attempts to *preserve useful structure*. For example,

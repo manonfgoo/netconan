@@ -38,6 +38,10 @@ from .sensitive_item_removal import (
     replace_matching_item,
 )
 from .ssh_key_anonymization import generate_ssh_key_regexes, replace_ssh_keys
+from .description_anonymization import (
+    generate_description_regexes,
+    replace_descriptions,
+)
 
 _DEFAULT_SALT_LENGTH = 16
 _CHAR_CHOICES = string.ascii_letters + string.digits
@@ -62,6 +66,7 @@ class FileAnonymizer:
         preserve_networks=None,
         preserve_suffix_v4=None,
         preserve_suffix_v6=None,
+        anon_descriptions=False,
     ):
         """Creates anonymizer classes."""
         self.undo_ip_anon = undo_ip_anon
@@ -78,6 +83,8 @@ class FileAnonymizer:
         self.pwd_lookup = None
         self.ssh_key_regexes = None
         self.ssh_key_lookup = None
+        self.description_regexes = None
+        self.description_lookup = None
 
         # The salt is only used for IP and sensitive word anonymization
         self.salt = salt
@@ -89,6 +96,10 @@ class FileAnonymizer:
                 'No salt was provided; using randomly generated "%s"', self.salt
             )
         logging.debug('Using salt: "%s"', self.salt)
+
+        if anon_descriptions:
+            self.description_regexes = generate_description_regexes()
+            self.description_lookup = {}
 
         if anon_pwd:
             self.compiled_regexes = generate_default_sensitive_item_regexes()
@@ -173,6 +184,14 @@ class FileAnonymizer:
             if self.anonymizer_sensitive_word is not None:
                 output_line = self.anonymizer_sensitive_word.anonymize(output_line)
 
+            if self.description_regexes is not None:
+                output_line = replace_descriptions(
+                    self.description_regexes,
+                    output_line,
+                    self.description_lookup,
+                    self.salt,
+                )
+
             if self.anonymizer_as_num is not None:
                 output_line = anonymize_as_numbers(self.anonymizer_as_num, output_line)
 
@@ -205,6 +224,7 @@ def anonymize_files(
     preserve_suffix_v6=None,
     anon_groups=False,
     anon_identities=False,
+    anon_descriptions=False,
 ):
     """Anonymize each file in input and save to output."""
     use_stdin = input_path == "-"
@@ -259,6 +279,7 @@ def anonymize_files(
         sensitive_words=sensitive_words,
         undo_ip_anon=undo_ip_anon,
         anon_ssh_keys=anon_ssh_keys,
+        anon_descriptions=anon_descriptions,
     )
 
     if use_stdin or use_stdout:
