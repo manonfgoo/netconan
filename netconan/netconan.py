@@ -173,6 +173,12 @@ def _parse_args(argv):
         default=8,
         help="Preserve the trailing bits of IP addresses, aka the host bits of a network. Set this value large enough to represent the largest interface network (e.g., 8 for a /24 or 12 for a /20) or NAT pool.",
     )
+    parser.add_argument(
+        "--anonymize-descriptions",
+        action="store_true",
+        default=False,
+        help="Anonymize description fields with deterministic hashed replacements",
+    )
     return parser.parse_args(argv)
 
 
@@ -242,6 +248,7 @@ def main(argv=sys.argv[1:]):
             args.anonymize_groups,
             args.anonymize_identities,
             args.undo,
+            args.anonymize_descriptions,
         ]
     ):
         logging.warning(
@@ -264,6 +271,7 @@ def main(argv=sys.argv[1:]):
             preserve_addresses,
             anon_groups=args.anonymize_groups,
             anon_identities=args.anonymize_identities,
+            anon_descriptions=args.anonymize_descriptions,
             preserve_suffix_v4=args.preserve_host_bits,
             preserve_suffix_v6=args.preserve_host_bits,
             anon_ssh_keys=args.anonymize_ssh_keys,
