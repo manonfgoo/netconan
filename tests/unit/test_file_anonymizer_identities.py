@@ -1,4 +1,4 @@
-"""Test identity anonymization through the FileAnonymizer pipeline."""
+"""Test identity and group anonymization through the FileAnonymizer pipeline."""
 
 import io
 
@@ -59,5 +59,28 @@ def test_anonymize_identities_snmp():
     # Group is NOT replaced without --anonymize-groups
     assert "Somegroup" in result
     assert "group_" not in result
+    # Command structure preserved
+    assert result.startswith("snmp-server user ")
+
+
+def test_anonymize_identities_and_groups_snmp():
+    """Test SNMP user+group anonymization with both flags through the pipeline."""
+    input_line = "snmp-server user Someone Somegroup v3 auth sha Secret123 priv aes 128 PrivSecret\n"
+    file_anonymizer = FileAnonymizer(
+        anon_pwd=False,
+        anon_ip=False,
+        salt=_SALT,
+        anon_identities=True,
+        anon_groups=True,
+    )
+    input_io = io.StringIO(input_line)
+    output_io = io.StringIO()
+    file_anonymizer.anonymize_io(input_io, output_io)
+    result = output_io.getvalue()
+
+    assert "Someone" not in result
+    assert "Somegroup" not in result
+    assert "user_" in result
+    assert "group_" in result
     # Command structure preserved
     assert result.startswith("snmp-server user ")
