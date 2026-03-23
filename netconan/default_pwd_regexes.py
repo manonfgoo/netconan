@@ -131,7 +131,6 @@ default_pwd_line_regexes = [
     [(r"(\S* )*md5 \d+ key [^ ;]+(.*)", None)],
     [(r"(\S* )*(secret|simple-password) [^ ;]+(.*)", None)],
     [(r"(\S* )*encrypted-password [^ ;]+(.*)", None)],
-    [(r"(\S* )*ssh-(rsa|dsa) \"(.*)", None)],
     [(r"(\S* )*((pre-shared-|)key (ascii-text|hexadecimal)) [^ ;]+(.*)", None)],
 ]
 # Taken from RANCID community scrubbing regexes

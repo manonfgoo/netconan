@@ -106,7 +106,13 @@ def _parse_args(argv):
         "--anonymize-passwords",
         action="store_true",
         default=False,
-        help="Anonymize password and snmp community lines",
+        help="Anonymize password and snmp community lines (does not include SSH keys; use --anonymize-ssh-keys)",
+    )
+    parser.add_argument(
+        "--anonymize-ssh-keys",
+        action="store_true",
+        default=False,
+        help="Anonymize SSH public key blobs in authentication and known-hosts lines. Supports RSA, DSA, ECDSA, and Ed25519 key types. Replacement is deterministic from --salt.",
     )
     parser.add_argument(
         "-r",
@@ -220,6 +226,7 @@ def main(argv=sys.argv[1:]):
             sensitive_words,
             args.anonymize_passwords,
             args.anonymize_ips,
+            args.anonymize_ssh_keys,
             args.undo,
         ]
     ):
@@ -243,6 +250,7 @@ def main(argv=sys.argv[1:]):
             preserve_addresses,
             preserve_suffix_v4=args.preserve_host_bits,
             preserve_suffix_v6=args.preserve_host_bits,
+            anon_ssh_keys=args.anonymize_ssh_keys,
         )
 
 

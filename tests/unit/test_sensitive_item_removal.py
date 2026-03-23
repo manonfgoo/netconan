@@ -794,6 +794,11 @@ def test_pwd_removal_append(regexes, config_line, sensitive_text, append_text):
         "set community blah additive",
         "set community no-export additive",
         "set community peeras:24",
+        # SSH auth key lines should not be modified by the password pipeline
+        'set system login user admin authentication ssh-rsa "AAAAB3NzaC1yc2EAAAADAQABAAABgQC5ts0e"',
+        'set system login user admin authentication ssh-dsa "AAAAB3NzaC1kc3MAAACBALFy"',
+        'set system login user admin authentication ssh-ed25519 "AAAAC3NzaC1lZDI1NTE5AAAAIGrBZkFSgWzM"',
+        'set system login user admin authentication ssh-ecdsa "AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAI"',
     ],
 )
 def test_pwd_removal_insensitive_lines(regexes, config_line):

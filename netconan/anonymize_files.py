@@ -31,6 +31,7 @@ from .sensitive_item_removal import (
     generate_default_sensitive_item_regexes,
     replace_matching_item,
 )
+from .ssh_key_anonymization import generate_ssh_key_regexes, replace_ssh_keys
 
 _DEFAULT_SALT_LENGTH = 16
 _CHAR_CHOICES = string.ascii_letters + string.digits
@@ -52,6 +53,7 @@ class FileAnonymizer:
         preserve_networks=None,
         preserve_suffix_v4=None,
         preserve_suffix_v6=None,
+        anon_ssh_keys=False,
     ):
         """Creates anonymizer classes."""
         self.undo_ip_anon = undo_ip_anon
@@ -62,6 +64,8 @@ class FileAnonymizer:
         self.anonymizer_sensitive_word = None
         self.compiled_regexes = None
         self.pwd_lookup = None
+        self.ssh_key_regexes = None
+        self.ssh_key_lookup = None
 
         # The salt is only used for IP and sensitive word anonymization
         self.salt = salt
@@ -95,6 +99,9 @@ class FileAnonymizer:
             )
         if as_numbers is not None:
             self.anonymizer_as_num = AsNumberAnonymizer(as_numbers, self.salt)
+        if anon_ssh_keys:
+            self.ssh_key_regexes = generate_ssh_key_regexes()
+            self.ssh_key_lookup = {}
 
     def anonymize_file(self, in_file, out_file):
         """Anonymize a single file."""
@@ -135,6 +142,11 @@ class FileAnonymizer:
             if self.anonymizer_as_num is not None:
                 output_line = anonymize_as_numbers(self.anonymizer_as_num, output_line)
 
+            if self.ssh_key_regexes is not None and self.ssh_key_lookup is not None:
+                output_line = replace_ssh_keys(
+                    self.ssh_key_regexes, output_line, self.ssh_key_lookup, self.salt
+                )
+
             if line != output_line:
                 logging.debug("Input line:  %s", line.rstrip())
                 logging.debug("Output line: %s", output_line.rstrip())
@@ -156,6 +168,7 @@ def anonymize_files(
     preserve_networks=None,
     preserve_suffix_v4=None,
     preserve_suffix_v6=None,
+    anon_ssh_keys=False,
 ):
     """Anonymize each file in input and save to output."""
     if not os.path.exists(input_path):
@@ -198,6 +211,7 @@ def anonymize_files(
         salt=salt,
         sensitive_words=sensitive_words,
         undo_ip_anon=undo_ip_anon,
+        anon_ssh_keys=anon_ssh_keys,
     )
 
     for in_path, out_path in file_list:
