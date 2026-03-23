@@ -106,7 +106,7 @@ def _parse_args(argv):
         "--anonymize-passwords",
         action="store_true",
         default=False,
-        help="Anonymize password and snmp community lines (does not include SSH keys; use --anonymize-ssh-keys)",
+        help="Anonymize password and snmp community lines",
     )
     parser.add_argument(
         "--anonymize-ssh-keys",
@@ -222,11 +222,11 @@ def main(argv=sys.argv[1:]):
 
     if not any(
         [
+            args.anonymize_ssh_keys,
             as_numbers,
             sensitive_words,
             args.anonymize_passwords,
             args.anonymize_ips,
-            args.anonymize_ssh_keys,
             args.undo,
         ]
     ):

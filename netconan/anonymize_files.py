@@ -47,13 +47,13 @@ class FileAnonymizer:
         salt=None,
         sensitive_words=None,
         undo_ip_anon=False,
+        anon_ssh_keys=False,
         as_numbers=None,
         reserved_words=None,
         preserve_prefixes=None,
         preserve_networks=None,
         preserve_suffix_v4=None,
         preserve_suffix_v6=None,
-        anon_ssh_keys=False,
     ):
         """Creates anonymizer classes."""
         self.undo_ip_anon = undo_ip_anon
@@ -166,9 +166,9 @@ def anonymize_files(
     reserved_words=None,
     preserve_prefixes=None,
     preserve_networks=None,
+    anon_ssh_keys=False,
     preserve_suffix_v4=None,
     preserve_suffix_v6=None,
-    anon_ssh_keys=False,
 ):
     """Anonymize each file in input and save to output."""
     if not os.path.exists(input_path):

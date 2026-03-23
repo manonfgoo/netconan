@@ -136,8 +136,7 @@ For more information about less commonly-used features, see the Netconan help (`
                             Output file or directory where anonymized files are
                             placed
       -p, --anonymize-passwords
-                            Anonymize password and snmp community lines (does
-                            not include SSH keys; use --anonymize-ssh-keys)
+                            Anonymize password and snmp community lines
       -r RESERVED_WORDS, --reserved-words RESERVED_WORDS
                             List of comma separated words that should not be
                             anonymized
